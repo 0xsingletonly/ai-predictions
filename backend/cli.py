@@ -377,7 +377,7 @@ Examples:
     discover_parser.add_argument("--min-liquidity", type=float, default=50000, help="Minimum liquidity")
     discover_parser.add_argument("--min-days", type=int, default=None, help="Minimum days to resolution (default: no filter)")
     discover_parser.add_argument("--max-days", type=int, default=None, help="Maximum days to resolution (default: no filter)")
-    discover_parser.add_argument("--limit", type=int, default=100, help="Max markets to fetch")
+    discover_parser.add_argument("--limit", type=int, default=500, help="Max markets to fetch (default: 500)")
     discover_parser.set_defaults(func=cmd_discover)
     
     args = parser.parse_args()
