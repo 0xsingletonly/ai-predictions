@@ -58,16 +58,30 @@ python cli.py discover
 ```
 
 **What to expect:**
-- Searches Polymarket for markets with >$50k liquidity
-- Filters by resolution horizon (2-4 weeks ideally)
-- Displays market title, condition ID, liquidity, and current price
-- Use these condition IDs to intake questions
+- Fetches all active Polymarket markets
+- Filters by liquidity (default: >$50k, adjustable)
+- **Sorts by**: Liquidity (highest first) → Resolution date (earliest first)
+- Displays market title, condition ID, liquidity, days to resolution, and end date
+- Use the condition IDs to intake questions
 
 **Options:**
 ```bash
-python cli.py discover --tags geopolitics,politics    # Search specific tags
-python cli.py discover --min-liquidity 100000        # Higher liquidity threshold
+# Filter by keywords in market title (case-insensitive)
+python cli.py discover --keywords "trump,china,war,election"
+
+# Filter by date range (days to resolution)
+python cli.py discover --min-days 7 --max-days 60   # Markets resolving in 7-60 days
+python cli.py discover --max-days 30                 # Within 30 days only
+
+# Adjust liquidity threshold
+python cli.py discover --min-liquidity 100000        # $100k+ liquidity
+python cli.py discover --min-liquidity 10000         # $10k+ liquidity (more results)
+
+# Limit number of results fetched
+python cli.py discover --limit 50
 ```
+
+**Note:** Polymarket's API tags are mostly empty, so keyword filtering is the recommended way to find topic-specific markets.
 
 ---
 
