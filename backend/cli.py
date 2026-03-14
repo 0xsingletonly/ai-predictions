@@ -196,29 +196,50 @@ def cmd_resolve(args):
 def cmd_discover(args):
     """Discover eligible questions from Polymarket."""
     from src.data.polymarket import GammaMarketsClient
+    from datetime import datetime
     
     print("🔍 Discovering eligible Polymarket questions...\n")
     
     async def _discover():
         client = GammaMarketsClient()
         try:
-            # Search multiple tags
-            tags = args.tags.split(",") if args.tags else ["geopolitics", "politics"]
             all_markets = []
             
-            for tag in tags:
-                print(f"Searching tag: {tag}...")
-                markets = await client.get_markets_by_tag(
-                    tag=tag.strip(),
-                    min_liquidity=args.min_liquidity,
-                    limit=20
+            if args.use_tags:
+                # Legacy: Search by tags (most markets don't have tags)
+                tags = args.tags.split(",") if args.tags else ["geopolitics", "politics"]
+                for tag in tags:
+                    print(f"Searching tag: {tag}...")
+                    markets = await client.get_markets_by_tag(
+                        tag=tag.strip(),
+                        min_liquidity=args.min_liquidity,
+                        limit=20
+                    )
+                    if args.no_date_filter:
+                        filtered = markets
+                    else:
+                        filtered = client.filter_by_horizon(markets, min_days=args.min_days, max_days=args.max_days)
+                    for m in filtered:
+                        m["source_tag"] = tag
+                    all_markets.extend(filtered)
+            else:
+                # New: Get all markets (tags are often empty in API)
+                print(f"Fetching all active markets (will filter by liquidity locally)...")
+                markets = await client.get_markets(
+                    active=True,
+                    limit=args.limit
                 )
-                filtered = client.filter_by_horizon(markets, min_days=14, max_days=28)
-                for m in filtered:
-                    m["source_tag"] = tag
-                all_markets.extend(filtered)
+                
+                # Filter by liquidity locally (API filter doesn't work well)
+                markets = [m for m in markets if (m.get("liquidityNum") or 0) >= args.min_liquidity]
+                
+                # Filter by date if requested
+                if not args.no_date_filter:
+                    markets = client.filter_by_horizon(markets, min_days=args.min_days, max_days=args.max_days)
+                
+                all_markets.extend(markets)
             
-            # Remove duplicates by condition_id
+            # Remove duplicates and sort by liquidity
             seen = set()
             unique_markets = []
             for m in all_markets:
@@ -227,24 +248,42 @@ def cmd_discover(args):
                     seen.add(cid)
                     unique_markets.append(m)
             
+            # Sort by liquidity (highest first)
+            unique_markets.sort(key=lambda x: x.get("liquidityNum") or 0, reverse=True)
+            
             print(f"\n✅ Found {len(unique_markets)} eligible markets:\n")
             
-            for i, m in enumerate(unique_markets[:10], 1):
+            now = datetime.utcnow()
+            for i, m in enumerate(unique_markets[:20], 1):
                 liq = m.get("liquidityNum") or 0
                 end_date = m.get("endDate", "N/A")
                 prices = m.get("outcomePrices", [])
                 
-                print(f"{i}. {m.get('question', 'N/A')[:70]}")
-                print(f"   Condition ID: {m.get('conditionId')}")
-                print(f"   Liquidity: ${liq:,.2f}")
-                print(f"   End Date: {end_date}")
-                print(f"   Tag: {m.get('source_tag', 'N/A')}")
-                if prices:
-                    print(f"   Current Price (Yes): {prices[0]}")
+                # Calculate days to resolution
+                days_str = "N/A"
+                if end_date and end_date != "N/A":
+                    try:
+                        dt = datetime.fromisoformat(end_date.replace("Z", "+00:00")).replace(tzinfo=None)
+                        days = (dt - now).days
+                        days_str = f"{days}d"
+                    except:
+                        pass
+                
+                price_str = ""
+                if prices and len(prices) > 0:
+                    try:
+                        price_val = float(prices[0]) * 100
+                        price_str = f" | 📊 Yes: {price_val:.1f}%"
+                    except:
+                        pass
+                
+                print(f"{i}. {m.get('question', 'N/A')[:65]}")
+                print(f"   💰 ${liq:,.0f} | 📅 {days_str} | 🔚 {end_date[:10] if end_date else 'N/A'}{price_str}")
+                print(f"   🆔 {m.get('conditionId')}")
                 print()
             
-            if len(unique_markets) > 10:
-                print(f"... and {len(unique_markets) - 10} more")
+            if len(unique_markets) > 20:
+                print(f"... and {len(unique_markets) - 20} more")
                 
         finally:
             await client.close()
@@ -307,8 +346,13 @@ Examples:
     
     # Discover command
     discover_parser = subparsers.add_parser("discover", help="Discover eligible questions")
-    discover_parser.add_argument("--tags", default="geopolitics,politics", help="Comma-separated tags to search")
+    discover_parser.add_argument("--tags", default="geopolitics,politics", help="Comma-separated tags to search (legacy)")
+    discover_parser.add_argument("--use-tags", action="store_true", help="Use tag-based search (most markets have no tags)")
     discover_parser.add_argument("--min-liquidity", type=float, default=50000, help="Minimum liquidity")
+    discover_parser.add_argument("--min-days", type=int, default=7, help="Minimum days to resolution (default: 7)")
+    discover_parser.add_argument("--max-days", type=int, default=180, help="Maximum days to resolution (default: 180)")
+    discover_parser.add_argument("--no-date-filter", action="store_true", help="Skip date range filtering (show all)")
+    discover_parser.add_argument("--limit", type=int, default=100, help="Max markets to fetch")
     discover_parser.set_defaults(func=cmd_discover)
     
     args = parser.parse_args()

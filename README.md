@@ -13,7 +13,7 @@ An AI-powered reasoning agent that tracks geopolitical prediction markets on Pol
 - Python 3.10+
 - Node.js 18+
 - API Keys:
-  - **Kimi API Key** (required): Get from [platform.moonshot.cn](https://platform.moonshot.cn/)
+  - **Kimi API Key** (required): Get from [platform.moonshot.ai](https://platform.moonshot.ai/)
   - **NewsAPI Key** (optional): Get from [newsapi.org](https://newsapi.org/)
 
 ### Installation

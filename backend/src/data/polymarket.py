@@ -1,7 +1,7 @@
 """Polymarket API clients for Gamma and CLOB APIs."""
 import os
 from typing import List, Dict, Any, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import httpx
 from dotenv import load_dotenv
 
@@ -123,7 +123,7 @@ class GammaMarketsClient:
             max_days: Maximum days to resolution
         """
         filtered = []
-        now = datetime.utcnow()
+        now = datetime.utcnow().replace(tzinfo=timezone.utc)
         
         for market in markets:
             end_date_str = market.get("endDate") or market.get("resolutionDate")
