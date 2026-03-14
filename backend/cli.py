@@ -237,6 +237,17 @@ def cmd_discover(args):
                 if not args.no_date_filter:
                     markets = client.filter_by_horizon(markets, min_days=args.min_days, max_days=args.max_days)
                 
+                # Filter by keywords if specified
+                if args.keywords:
+                    keywords = [k.strip().lower() for k in args.keywords.split(",")]
+                    filtered_by_keyword = []
+                    for m in markets:
+                        question = m.get("question", "").lower()
+                        if any(kw in question for kw in keywords):
+                            filtered_by_keyword.append(m)
+                    markets = filtered_by_keyword
+                    print(f"  Filtered by keywords '{args.keywords}': {len(markets)} matches")
+                
                 all_markets.extend(markets)
             
             # Remove duplicates and sort by liquidity
@@ -348,6 +359,7 @@ Examples:
     discover_parser = subparsers.add_parser("discover", help="Discover eligible questions")
     discover_parser.add_argument("--tags", default="geopolitics,politics", help="Comma-separated tags to search (legacy)")
     discover_parser.add_argument("--use-tags", action="store_true", help="Use tag-based search (most markets have no tags)")
+    discover_parser.add_argument("--keywords", type=str, help="Filter by keywords in question (comma-separated, e.g., 'trump,war,election')")
     discover_parser.add_argument("--min-liquidity", type=float, default=50000, help="Minimum liquidity")
     discover_parser.add_argument("--min-days", type=int, default=7, help="Minimum days to resolution (default: 7)")
     discover_parser.add_argument("--max-days", type=int, default=180, help="Maximum days to resolution (default: 180)")
