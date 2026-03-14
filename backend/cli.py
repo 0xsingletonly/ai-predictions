@@ -233,9 +233,11 @@ def cmd_discover(args):
                 # Filter by liquidity locally (API filter doesn't work well)
                 markets = [m for m in markets if (m.get("liquidityNum") or 0) >= args.min_liquidity]
                 
-                # Filter by date if requested
-                if not args.no_date_filter:
-                    markets = client.filter_by_horizon(markets, min_days=args.min_days, max_days=args.max_days)
+                # Filter by date only if min_days or max_days explicitly provided
+                if args.min_days is not None or args.max_days is not None:
+                    min_d = args.min_days or 0
+                    max_d = args.max_days or 9999
+                    markets = client.filter_by_horizon(markets, min_days=min_d, max_days=max_d)
                 
                 # Filter by keywords if specified
                 if args.keywords:
@@ -250,7 +252,7 @@ def cmd_discover(args):
                 
                 all_markets.extend(markets)
             
-            # Remove duplicates and sort by liquidity
+            # Remove duplicates
             seen = set()
             unique_markets = []
             for m in all_markets:
@@ -259,8 +261,20 @@ def cmd_discover(args):
                     seen.add(cid)
                     unique_markets.append(m)
             
-            # Sort by liquidity (highest first)
-            unique_markets.sort(key=lambda x: x.get("liquidityNum") or 0, reverse=True)
+            # Sort by liquidity (descending), then by end date (ascending - earliest first)
+            def sort_key(m):
+                liq = m.get("liquidityNum") or 0
+                end_date_str = m.get("endDate") or m.get("resolutionDate")
+                end_timestamp = float('inf')  # Markets without dates go to the end
+                if end_date_str:
+                    try:
+                        dt = datetime.fromisoformat(end_date_str.replace("Z", "+00:00"))
+                        end_timestamp = dt.timestamp()
+                    except:
+                        pass
+                return (-liq, end_timestamp)  # Negative liquidity for descending, timestamp ascending
+            
+            unique_markets.sort(key=sort_key)
             
             print(f"\n✅ Found {len(unique_markets)} eligible markets:\n")
             
@@ -361,9 +375,8 @@ Examples:
     discover_parser.add_argument("--use-tags", action="store_true", help="Use tag-based search (most markets have no tags)")
     discover_parser.add_argument("--keywords", type=str, help="Filter by keywords in question (comma-separated, e.g., 'trump,war,election')")
     discover_parser.add_argument("--min-liquidity", type=float, default=50000, help="Minimum liquidity")
-    discover_parser.add_argument("--min-days", type=int, default=7, help="Minimum days to resolution (default: 7)")
-    discover_parser.add_argument("--max-days", type=int, default=180, help="Maximum days to resolution (default: 180)")
-    discover_parser.add_argument("--no-date-filter", action="store_true", help="Skip date range filtering (show all)")
+    discover_parser.add_argument("--min-days", type=int, default=None, help="Minimum days to resolution (default: no filter)")
+    discover_parser.add_argument("--max-days", type=int, default=None, help="Maximum days to resolution (default: no filter)")
     discover_parser.add_argument("--limit", type=int, default=100, help="Max markets to fetch")
     discover_parser.set_defaults(func=cmd_discover)
     
