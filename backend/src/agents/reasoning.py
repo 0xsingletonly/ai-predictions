@@ -88,12 +88,11 @@ Provide your classification in this JSON format:
 Only output valid JSON."""
 
         try:
-            # Combine system prompt into user message (Kimi K2.5 works better without system messages)
-            full_prompt = "You are a geopolitical analysis assistant. Respond only with valid JSON.\n\n" + prompt
             response = await self.client.chat.completions.create(
                 model=self.MODEL,
                 messages=[
-                    {"role": "user", "content": full_prompt}
+                    {"role": "system", "content": "You are a geopolitical analysis assistant. Respond only with valid JSON."},
+                    {"role": "user", "content": prompt}
                 ],
                 max_tokens=4000
             )
@@ -150,11 +149,11 @@ Write 1-2 compelling paragraphs arguing for a higher probability.
 Be specific, cite evidence, and steelman the case."""
 
         try:
-            full_prompt = "You are a sharp geopolitical analyst making the strongest bull case.\n\n" + prompt
             response = await self.client.chat.completions.create(
                 model=self.MODEL,
                 messages=[
-                    {"role": "user", "content": full_prompt}
+                    {"role": "system", "content": "You are a sharp geopolitical analyst making the strongest bull case."},
+                    {"role": "user", "content": prompt}
                 ],
                 max_tokens=2000
             )
@@ -204,11 +203,11 @@ Write 1-2 compelling paragraphs arguing for a lower probability.
 Be specific, cite evidence, and steelman the case."""
 
         try:
-            full_prompt = "You are a sharp geopolitical analyst making the strongest bear case.\n\n" + prompt
             response = await self.client.chat.completions.create(
                 model=self.MODEL,
                 messages=[
-                    {"role": "user", "content": full_prompt}
+                    {"role": "system", "content": "You are a sharp geopolitical analyst making the strongest bear case."},
+                    {"role": "user", "content": prompt}
                 ],
                 max_tokens=2000
             )
@@ -286,11 +285,11 @@ Rules:
 Output only valid JSON."""
 
         try:
-            full_prompt = "You are a calibrated geopolitical forecaster. Respond only with valid JSON.\n\n" + prompt
             response = await self.client.chat.completions.create(
                 model=self.MODEL,
                 messages=[
-                    {"role": "user", "content": full_prompt}
+                    {"role": "system", "content": "You are a calibrated geopolitical forecaster. Respond only with valid JSON."},
+                    {"role": "user", "content": prompt}
                 ],
                 max_tokens=3000
             )
