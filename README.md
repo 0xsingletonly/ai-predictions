@@ -58,11 +58,13 @@ python cli.py discover
 ```
 
 **What to expect:**
-- Fetches all active Polymarket markets
+- Fetches all active Polymarket markets via **events endpoint** (~7,500+ markets)
 - Filters by liquidity (default: >$50k, adjustable)
 - **Sorts by**: Liquidity (highest first) → Resolution date (earliest first)
 - Displays market title, condition ID, liquidity, days to resolution, and end date
 - Use the condition IDs to intake questions
+
+**Note:** The events endpoint includes markets that are grouped under events (e.g., "US forces enter Iran by...?" event with multiple date markets).
 
 **Options:**
 ```bash
@@ -84,7 +86,7 @@ python cli.py discover --limit 50
 **Notes:**
 - Polymarket's API tags are mostly empty, so keyword filtering is the recommended way to find topic-specific markets
 - Keyword search matches substrings (e.g., `war` matches `Warriors`) - be specific
-- Some topics may have no markets (e.g., "iran" only matches sports markets currently)
+- Uses `/events` endpoint which finds 7,500+ markets vs ~100 from `/markets` endpoint
 - Lower `--min-liquidity` (e.g., 10000) to find more geopolitical markets
 
 ---
