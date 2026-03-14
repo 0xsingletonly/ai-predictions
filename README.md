@@ -81,7 +81,11 @@ python cli.py discover --min-liquidity 10000         # $10k+ liquidity (more res
 python cli.py discover --limit 50
 ```
 
-**Note:** Polymarket's API tags are mostly empty, so keyword filtering is the recommended way to find topic-specific markets.
+**Notes:**
+- Polymarket's API tags are mostly empty, so keyword filtering is the recommended way to find topic-specific markets
+- Keyword search matches substrings (e.g., `war` matches `Warriors`) - be specific
+- Some topics may have no markets (e.g., "iran" only matches sports markets currently)
+- Lower `--min-liquidity` (e.g., 10000) to find more geopolitical markets
 
 ---
 
