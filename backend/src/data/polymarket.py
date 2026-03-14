@@ -69,6 +69,53 @@ class GammaMarketsClient:
             print(f"Error fetching markets: {e}")
             raise
     
+    async def get_all_markets_via_events(
+        self,
+        active: bool = True,
+        limit: int = 500,
+    ) -> List[Dict[str, Any]]:
+        """
+        Fetch all markets via events endpoint (includes event-grouped markets).
+        
+        This is more comprehensive than get_markets() as it includes markets
+        that are part of events (like 'US forces enter Iran by...' event).
+        
+        Args:
+            active: Only active events
+            limit: Number of events to fetch
+        """
+        params = {
+            "active": str(active).lower(),
+            "closed": "false",
+            "archived": "false",
+            "limit": limit,
+            "order": "liquidity",
+            "ascending": "false",
+        }
+        
+        try:
+            response = await self.client.get("/events", params=params)
+            response.raise_for_status()
+            events = response.json()
+            
+            # Flatten events into individual markets
+            all_markets = []
+            for event in events:
+                event_markets = event.get("markets", [])
+                # Add event context to each market
+                for market in event_markets:
+                    market["_event_title"] = event.get("title")
+                    market["_event_slug"] = event.get("slug")
+                all_markets.extend(event_markets)
+            
+            return all_markets
+        except httpx.HTTPStatusError as e:
+            print(f"HTTP error fetching events: {e}")
+            raise
+        except Exception as e:
+            print(f"Error fetching events: {e}")
+            raise
+    
     async def get_market(self, condition_id: str) -> Dict[str, Any]:
         """
         Fetch a single market by condition_id.

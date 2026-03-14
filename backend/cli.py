@@ -223,12 +223,13 @@ def cmd_discover(args):
                         m["source_tag"] = tag
                     all_markets.extend(filtered)
             else:
-                # New: Get all markets (tags are often empty in API)
-                print(f"Fetching all active markets (will filter by liquidity locally)...")
-                markets = await client.get_markets(
+                # New: Get all markets via events endpoint (more comprehensive)
+                print(f"Fetching all active markets via events endpoint...")
+                markets = await client.get_all_markets_via_events(
                     active=True,
                     limit=args.limit
                 )
+                print(f"  Fetched {len(markets)} markets from events")
                 
                 # Filter by liquidity locally (API filter doesn't work well)
                 markets = [m for m in markets if (m.get("liquidityNum") or 0) >= args.min_liquidity]
