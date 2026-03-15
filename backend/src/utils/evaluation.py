@@ -118,7 +118,8 @@ def detect_anchoring(
     streaks = []
     
     for log in sorted_logs:
-        delta = abs(log.get("delta", 0))
+        delta_val = log.get("delta")
+        delta = abs(delta_val) if delta_val is not None else 0
         confidence = log.get("update_confidence", "").lower()
         
         if delta <= max_delta:
@@ -134,9 +135,13 @@ def detect_anchoring(
         streaks.append(current_streak)
     
     # Anchoring detected if high confidence but small delta
+    def safe_delta(log):
+        d = log.get("delta")
+        return abs(d) if d is not None else 0
+    
     high_confidence_small_delta = any(
         log.get("update_confidence", "").lower() == "high" and 
-        abs(log.get("delta", 0)) <= max_delta
+        safe_delta(log) <= max_delta
         for log in sorted_logs[-min_consecutive_days:]
     )
     
@@ -171,7 +176,8 @@ def detect_overreaction(
     overreactions = []
     
     for log in daily_logs:
-        delta = abs(log.get("delta", 0))
+        delta_val = log.get("delta")
+        delta = abs(delta_val) if delta_val is not None else 0
         evidence = log.get("evidence_classification", {})
         
         # Check if noise was dominant but delta was large

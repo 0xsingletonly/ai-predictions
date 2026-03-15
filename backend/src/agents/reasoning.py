@@ -297,6 +297,16 @@ Output only valid JSON."""
             content = response.choices[0].message.content
             result = self._parse_json_response(content)
             
+            # Check if JSON parsing failed
+            if "error" in result:
+                raise ValueError(f"JSON parsing failed: {result.get('error')}")
+            
+            # Ensure required fields exist
+            if "posterior_probability" not in result or result["posterior_probability"] is None:
+                result["posterior_probability"] = prior_probability
+            if "delta" not in result or result["delta"] is None:
+                result["delta"] = 0.0
+            
             # Add computed fields
             result["prior_probability"] = prior_probability
             if polymarket_price is not None:
