@@ -94,8 +94,10 @@ class DataIngestionPipeline:
         Returns:
             Created Question model
         """
-        # Fetch market data
+        # Fetch market data - try direct endpoint first, fallback to events
         market = await self.polymarket.gamma.get_market(condition_id)
+        if not market:
+            raise ValueError(f"Market {condition_id} not found or inaccessible")
         
         # Extract token IDs
         tokens = market.get("tokens", [])

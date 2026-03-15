@@ -116,23 +116,47 @@ class GammaMarketsClient:
             print(f"Error fetching events: {e}")
             raise
     
-    async def get_market(self, condition_id: str) -> Dict[str, Any]:
+    async def get_market(self, condition_id: str) -> Optional[Dict[str, Any]]:
         """
         Fetch a single market by condition_id.
         
+        For region-restricted markets (US-only), falls back to searching
+        in the events endpoint which is not geo-blocked.
+        
         Args:
             condition_id: The Polymarket condition ID
+            
+        Returns:
+            Market dict or None if not found
         """
+        # Try direct endpoint first
         try:
             response = await self.client.get(f"/markets/{condition_id}")
             response.raise_for_status()
             return response.json()
         except httpx.HTTPStatusError as e:
-            print(f"HTTP error fetching market {condition_id}: {e}")
-            raise
+            # 422 or 403 often means region-restricted market
+            if e.response.status_code in (422, 403, 404):
+                print(f"  Market {condition_id} not accessible directly ({e.response.status_code}), trying events endpoint...")
+            else:
+                print(f"HTTP error fetching market {condition_id}: {e}")
+                return None
         except Exception as e:
             print(f"Error fetching market {condition_id}: {e}")
-            raise
+            return None
+        
+        # Fallback: search in events endpoint (not geo-blocked)
+        try:
+            events = await self.get_all_markets_via_events(active=True, limit=1000)
+            for market in events:
+                if market.get("conditionId") == condition_id:
+                    print(f"  Found market in events endpoint")
+                    return market
+            print(f"  Market {condition_id} not found in events")
+            return None
+        except Exception as e:
+            print(f"  Error searching events: {e}")
+            return None
     
     async def get_markets_by_tag(
         self, 
