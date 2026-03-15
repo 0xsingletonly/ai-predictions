@@ -94,15 +94,33 @@ class DataIngestionPipeline:
         Returns:
             Created Question model
         """
+        import json
+        
         # Fetch market data - try direct endpoint first, fallback to events
         market = await self.polymarket.gamma.get_market(condition_id)
         if not market:
             raise ValueError(f"Market {condition_id} not found or inaccessible")
         
-        # Extract token IDs
+        # Extract token IDs - try 'tokens' array first (direct endpoint), then 'clobTokenIds' (events)
+        token_id_yes = None
+        token_id_no = None
+        
         tokens = market.get("tokens", [])
-        token_id_yes = tokens[0].get("token_id") if len(tokens) > 0 else None
-        token_id_no = tokens[1].get("token_id") if len(tokens) > 1 else None
+        if tokens and len(tokens) >= 2:
+            # Direct endpoint format
+            token_id_yes = tokens[0].get("token_id")
+            token_id_no = tokens[1].get("token_id")
+        else:
+            # Events endpoint format: clobTokenIds is a JSON string
+            clob_token_ids_str = market.get("clobTokenIds")
+            if clob_token_ids_str:
+                try:
+                    clob_token_ids = json.loads(clob_token_ids_str)
+                    if len(clob_token_ids) >= 2:
+                        token_id_yes = clob_token_ids[0]
+                        token_id_no = clob_token_ids[1]
+                except json.JSONDecodeError:
+                    pass
         
         # Parse resolution date
         end_date = None
@@ -139,21 +157,45 @@ class DataIngestionPipeline:
         """
         Fetch current Polymarket price for a question.
         
+        For region-restricted markets, falls back to events endpoint
+        which provides outcomePrices without geo-blocking.
+        
         Args:
             question: Question model
             
         Returns:
             Current price (0-1) or None
         """
-        if not question.token_id_yes:
-            return None
+        import json
         
+        # Try CLOB API first (most accurate, real-time)
+        if question.token_id_yes:
+            try:
+                price_data = await self.polymarket.clob.get_price(question.token_id_yes)
+                price = float(price_data.get("price", 0))
+                if price > 0:
+                    return price
+            except Exception:
+                pass  # Fallback to events
+        
+        # Fallback: Get price from events endpoint (not geo-blocked)
         try:
-            price_data = await self.polymarket.clob.get_price(question.token_id_yes)
-            return float(price_data.get("price", 0))
+            markets = await self.polymarket.gamma.get_all_markets_via_events(
+                active=True, limit=1000
+            )
+            for market in markets:
+                if market.get("conditionId") == question.id:
+                    outcome_prices_str = market.get("outcomePrices")
+                    if outcome_prices_str:
+                        # outcomePrices is a JSON string: '["0.125", "0.875"]'
+                        outcome_prices = json.loads(outcome_prices_str)
+                        if len(outcome_prices) >= 1:
+                            return float(outcome_prices[0])  # YES price
+                    break
         except Exception as e:
-            print(f"Error fetching price for {question.id}: {e}")
-            return None
+            print(f"  Error fetching price from events for {question.id}: {e}")
+        
+        return None
     
     async def ingest_daily_data(
         self, 
