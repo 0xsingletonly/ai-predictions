@@ -92,6 +92,20 @@ class DailyReasoningJob:
                 polymarket_price=polymarket_price
             )
             
+            # Check if LLM reasoning actually succeeded or returned fallback values
+            if reasoning_result.get("reasoning_summary", "").startswith("Error"):
+                error_msg = reasoning_result.get("reasoning_summary", "Unknown error")
+                logger.error(f"  ❌ LLM reasoning failed: {error_msg}")
+                raise RuntimeError(f"LLM reasoning failed: {error_msg}")
+            
+            # Validate we got real results, not just defaults
+            if reasoning_result.get("posterior_probability") is None:
+                logger.error("  ❌ LLM returned None for posterior_probability")
+                raise RuntimeError("LLM returned invalid posterior probability")
+            
+            logger.info(f"  ✅ Reasoning complete: posterior={reasoning_result.get('posterior_probability'):.2f}, "
+                       f"delta={reasoning_result.get('delta', 0):+.2f}")
+            
             # Step 4: Check for warnings
             logger.info("  Checking for warnings...")
             
