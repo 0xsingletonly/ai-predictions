@@ -52,7 +52,7 @@ function QuestionCard({ question }) {
           <div className="text-xs text-gray-500 mb-1">Market Price</div>
           <div className="text-sm font-medium text-gray-300">
             {marketPrice !== null && marketPrice !== undefined
-              ? `${(marketPrice * 100).toFixed(0)}%`
+              ? `${(marketPrice * 100).toFixed(2)}%`
               : 'N/A'}
           </div>
         </div>

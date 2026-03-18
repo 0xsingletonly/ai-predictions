@@ -391,7 +391,7 @@ export default function QuestionDetail() {
                     </td>
                     <td className="py-3 text-gray-400">
                       {log.polymarket_price !== null 
-                        ? `${(log.polymarket_price * 100).toFixed(0)}%`
+                        ? `${(log.polymarket_price * 100).toFixed(2)}%`
                         : 'N/A'}
                     </td>
                     <td className={`py-3 ${
