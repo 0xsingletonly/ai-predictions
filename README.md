@@ -466,6 +466,118 @@ If price is still None, check your VPN connection.
 
 ---
 
+## How Reasoning Works
+
+The reasoning engine (`KimiReasoningAgent`) implements a **4-step structured reasoning pipeline** inspired by superforecasting techniques. Each daily update runs this pipeline for every active question.
+
+### Overview
+
+```
+┌─────────────────┐     ┌─────────────────────────────────────────────┐
+│  Input Data     │     │         4-Step Reasoning Pipeline           │
+│                 │     │                                             │
+│  • Prior prob   │────▶│  Step 1: Evidence Classification            │
+│  • News articles│     │         ↓                                   │
+│  • Market price │     │  Step 2: Bull Case Synthesis                │
+│                 │     │         ↓                                   │
+└─────────────────┘     │  Step 3: Bear Case Synthesis                │
+                        │         ↓                                   │
+┌─────────────────┐     │  Step 4: Posterior Update + WTCMM           │
+│  Output         │◄────│                                             │
+│                 │     └─────────────────────────────────────────────┘
+│  • Posterior    │                           │
+│  • Confidence   │                           ▼
+│  • WTCMM        │              ┌─────────────────────┐
+│  • Bull/Bear    │              │  Bias Detection     │
+│  • Summary      │              │  • Anchoring        │
+└─────────────────┘              │  • Overreaction     │
+                                 └─────────────────────┘
+```
+
+### The 4 Steps
+
+#### Step 1: Evidence Classification
+Each news article is classified by the LLM into one of four categories:
+
+| Category | Description | Example |
+|----------|-------------|---------|
+| `supports_yes` | Evidence the event is MORE likely | "UN calls for immediate ceasefire" |
+| `supports_no` | Evidence the event is LESS likely | "Israel continues military operations" |
+| `neutral` | Relevant but inconclusive | "Analysis of regional geopolitics" |
+| `noise` | Not relevant to the question | "Celebrity news, unrelated markets" |
+
+This creates a structured evidence base for subsequent steps.
+
+#### Step 2: Bull Case Synthesis
+The LLM generates the **strongest possible argument for HIGHER probability** (steel-manning):
+- What evidence supports the "yes" outcome?
+- What trends or momentum might be building?
+- What could surprise the market to the upside?
+- Why might the current probability be too low?
+
+#### Step 3: Bear Case Synthesis
+The LLM generates the **strongest possible argument for LOWER probability**:
+- What evidence supports the "no" outcome?
+- What obstacles or resistance exist?
+- What could surprise the market to the downside?
+- Why might the current probability be too high?
+
+#### Step 4: Posterior Update + WTCMM
+The LLM weighs both cases and outputs:
+
+```json
+{
+  "posterior_probability": 0.55,  // New belief (0.05-0.95)
+  "delta": 0.05,                   // Change from prior
+  "update_confidence": "medium",   // low/medium/high
+  "what_would_change_my_mind": "If Israel announces troop withdrawal by March 15",
+  "reasoning_summary": "Diplomatic pressure increasing but military operations continue"
+}
+```
+
+**Constraints:**
+- Probability bounded between **0.05-0.95** (never 0 or 1 to avoid overconfidence)
+- **WTCMM** (What Would Change My Mind) must be **specific and falsifiable** — not vague "if things change"
+- Divergence from market: `posterior - polymarket_price`
+
+### Bias Detection
+
+After reasoning, the system checks for cognitive biases:
+
+#### Anchoring Warning
+Triggers when the agent makes small updates (`< 0.02`) despite claiming high confidence for multiple consecutive days. Indicates the agent may be anchored to its prior.
+
+#### Overreaction Warning  
+Triggers on large probability swings (`> 0.15`) without proportionally strong evidence. Catches emotional/overconfident updates.
+
+### What Gets Stored
+
+Each daily update creates a `DailyLog` record:
+
+| Field | Description |
+|-------|-------------|
+| `prior_probability` | Yesterday's belief |
+| `posterior_probability` | Today's belief |
+| `delta` | Magnitude of update |
+| `polymarket_price` | Market's belief |
+| `divergence_from_market` | Agent vs market difference |
+| `bull_case` | Pro-yes argument |
+| `bear_case` | Pro-no argument |
+| `what_would_change_my_mind` | Falsifiable reversal condition |
+| `update_confidence` | low/medium/high |
+| `key_evidence` | Top supporting articles |
+| `anchoring_warning` | Bias flag |
+| `overreaction_warning` | Bias flag |
+
+### Cost & Performance
+
+- **4 API calls per question per day** (one per step)
+- Each call uses `kimi-k2.5` model
+- Run time scales linearly with number of questions (~30-60s per question)
+- With 10 questions: ~5-10 minutes, ~40 API calls
+
+---
+
 ## Architecture
 
 ```
