@@ -139,6 +139,9 @@ class DailyLogEntry(BaseModel):
     key_evidence: List[str]
     update_confidence: Optional[str]
     reasoning_summary: Optional[str]
+    bull_case: Optional[str]
+    bear_case: Optional[str]
+    what_would_change_my_mind: Optional[str]
     anchoring_warning: bool
     overreaction_warning: bool
     
@@ -322,6 +325,9 @@ async def get_question_logs(
             key_evidence=log.key_evidence or [],
             update_confidence=log.update_confidence,
             reasoning_summary=log.reasoning_summary,
+            bull_case=log.bull_case,
+            bear_case=log.bear_case,
+            what_would_change_my_mind=log.what_would_change_my_mind,
             anchoring_warning=log.anchoring_warning or False,
             overreaction_warning=log.overreaction_warning or False
         )
