@@ -350,7 +350,14 @@ Output only valid JSON."""
         Returns:
             Complete reasoning output
         """
-        question_text = question.get("title", "")
+        question_title = question.get("title", "")
+        question_description = question.get("description", "")
+        
+        # Combine title and description for full context
+        if question_description:
+            question_text = f"{question_title}\n\nResolution Criteria:\n{question_description}"
+        else:
+            question_text = question_title
         
         print(f"  Step 1/4: Classifying evidence ({len(articles)} articles)...")
         evidence = await self.classify_evidence(question_text, articles)
