@@ -194,53 +194,94 @@ python cli.py status
 
 Manually trigger the daily reasoning update for all active questions.
 
+There are two ways to run updates:
+
+#### Option A: Full Update (Single Command)
+
+Runs the complete pipeline in one go:
+
 ```bash
 python cli.py update
 ```
 
 **What to expect:**
-- Runs the full reasoning pipeline for each active question:
-  1. Fetches latest Polymarket price
-  2. Fetches relevant news articles (if NewsAPI configured)
-  3. Runs Kimi LLM 4-step reasoning (evidence → bull → bear → posterior)
-  4. Stores daily log with probabilities and reasoning
-  5. Checks for anchoring/overreaction warnings
-- Takes ~2-5 minutes depending on number of questions and API latency
-- Each question makes 4 API calls to Kimi
+- Runs the full reasoning pipeline for each active question
+- Takes ~2-5 minutes depending on number of questions
 
-**Output example:**
-```
-🔄 Running daily update...
+#### Option B: Split Update (VPN-Friendly)
 
-============================================================
-STARTING DAILY UPDATE
-============================================================
-Found 2 active questions
-Processing: Will there be a ceasefire in Gaza by March 31...
-  Fetching market data and news...
-  Polymarket price: 0.45
-  Articles fetched: 5
-  Prior probability: 0.42
-  Running LLM reasoning...
-    Step 1/4: Classifying evidence (5 articles)...
-    Step 2/4: Generating bull case...
-    Step 3/4: Generating bear case...
-    Step 4/4: Computing posterior...
-  ✅ Complete: posterior=0.38, delta=-0.04, confidence=medium
-Processing: Will Fed cut rates in 2026?
-  ...
+If you're using a VPN to access US-only Polymarket markets, you may hit Moonshot API rate limits. Use the split workflow:
 
-============================================================
-DAILY UPDATE COMPLETE: 2/2 successful
-============================================================
-
-✅ Update complete!
-  Processed: 2
-  Successful: 2
-  Failed: 0
+**Step 1: Fetch Data (US VPN Required)**
+```bash
+# Connect to US VPN first
+python cli.py fetch
 ```
 
-**Note:** This is also run automatically by the scheduler at 9:00 AM UTC daily.
+**What to expect:**
+- Fetches Polymarket prices (requires VPN for restricted markets)
+- Fetches news articles
+- Stores data in `pending_updates` table
+
+**Output:**
+```
+📥 Fetching Polymarket data (Step 1/2)...
+   Fetched: 1
+   Failed: 0
+
+✅ Data stored in pending_updates table
+
+📝 NEXT STEP:
+   1. Disconnect your VPN (if desired)
+   2. Run: python cli.py reason
+```
+
+**Step 2: Run Reasoning (No VPN Needed)**
+```bash
+# Disconnect VPN, then:
+python cli.py reason
+```
+
+**What to expect:**
+- Reads from `pending_updates` table
+- Runs Kimi LLM 4-step reasoning (evidence → bull → bear → posterior)
+- Creates DailyLog entries
+- No VPN needed - Moonshot API works from any location
+
+**Output:**
+```
+🧠 Running LLM reasoning (Step 2/2)...
+   Processing 1 pending update...
+
+   Question: Kharg Island no longer under Iranian control...
+   Step 1/4: Classifying evidence...
+   Step 2/4: Generating bull case...
+   Step 3/4: Generating bear case...
+   Step 4/4: Computing posterior...
+   ✓ Complete: 0.12 → 0.17
+
+📊 Reasoning Results:
+   Processed: 1
+   Failed: 0
+
+✅ Daily logs created
+```
+
+**Why split?**
+- Polymarket US markets require US IP (VPN)
+- Moonshot API may rate-limit VPN traffic
+- Splitting lets you disconnect VPN before calling LLM APIs
+
+**Full Pipeline Details:**
+Each question runs 4 steps:
+1. **Classify Evidence** - Categorize news as supports_yes/supports_no/neutral/noise
+2. **Generate Bull Case** - Arguments for YES outcome
+3. **Generate Bear Case** - Arguments for NO outcome  
+4. **Compute Posterior** - Final probability with confidence
+
+Each question makes 4 API calls to Kimi. Run time scales linearly with number of questions.
+
+**Note:** The scheduler (`python -m src.scheduler.scheduler`) runs the full update automatically at 9:00 AM UTC daily.
 
 ---
 
@@ -341,28 +382,39 @@ python -m src.scheduler.scheduler
 
 1. **Discover:** Find interesting markets
    ```bash
-   python cli.py discover
+   python cli.py discover --keywords "iran,israel,gaza"
    ```
 
-2. **Intake:** Add up to 5 questions
+2. **Intake:** Add questions you want to track
    ```bash
-   python cli.py intake <condition_id_1>
-   python cli.py intake <condition_id_2>
+   python cli.py intake <condition_id>
    ```
 
-3. **Monitor:** Check status daily
+3. **Monitor:** Check status
    ```bash
    python cli.py status
    ```
 
-4. **Update:** Run reasoning (or let scheduler do it)
+4. **Update:** Run daily reasoning
+
+   **Option A:** Full update (single command)
    ```bash
    python cli.py update
    ```
 
+   **Option B:** Split update (VPN-friendly for US markets)
+   ```bash
+   # Step 1: On US VPN - fetch Polymarket data
+   python cli.py fetch
+   
+   # Disconnect VPN
+   
+   # Step 2: Run LLM reasoning
+   python cli.py reason
+   ```
+
 5. **View:** Open dashboard to see charts and reasoning
    ```bash
-   # In another terminal
    cd frontend && npm run dev
    ```
 
@@ -379,6 +431,20 @@ python -m src.scheduler.scheduler
 - Add `KIMI_API_KEY` to `backend/.env`
 - Get key from [platform.moonshot.cn](https://platform.moonshot.cn/)
 
+### Moonshot API rate limit errors while on VPN
+If you get rate limit errors when calling Moonshot API through a VPN:
+
+**Use the split workflow:**
+```bash
+# Step 1: Connect VPN, fetch data
+python cli.py fetch
+
+# Step 2: Disconnect VPN, run reasoning
+python cli.py reason
+```
+
+This stores Polymarket data locally, then runs LLM calls without VPN.
+
 ### API connection errors
 - Ensure backend is running on port 8000
 - Check `VITE_API_URL` in `frontend/.env`
@@ -390,6 +456,13 @@ python -m src.scheduler.scheduler
 ### Empty probability chart
 - Daily logs must exist for chart to render
 - Run `python cli.py update` to generate logs
+
+### "Polymarket price: None" for region-restricted markets
+Some markets (e.g., Iran-related) are US-only. The system automatically:
+1. Tries CLOB API first (real-time prices)
+2. Falls back to events endpoint if geo-blocked
+
+If price is still None, check your VPN connection.
 
 ---
 
