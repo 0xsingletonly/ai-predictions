@@ -19,7 +19,7 @@ from src.models.database import (
     get_engine, init_db, SessionLocal
 )
 from src.data.ingestion import DataIngestionPipeline, run_intake
-from src.scheduler.daily_job import run_daily_job
+from src.scheduler.daily_job import run_daily_job, run_fetch_step, run_reason_step
 from src.utils.evaluation import compute_brier_score, compute_brier_scores_at_resolution
 
 
@@ -117,6 +117,50 @@ def cmd_update(args):
     results = asyncio.run(run_daily_job(args.db))
     
     print(f"\n✅ Update complete!")
+
+
+def cmd_fetch(args):
+    """Step 1: Fetch Polymarket data (US VPN required)."""
+    print("📥 Fetching Polymarket data (Step 1/2)...")
+    print("   This requires US VPN for restricted markets")
+    print()
+    
+    results = asyncio.run(run_fetch_step(args.db))
+    
+    print(f"\n📊 Fetch Results:")
+    print(f"   Fetched: {results['fetched']}")
+    print(f"   Failed:  {results['failed']}")
+    
+    if results['details']:
+        print("\n   Details:")
+        for d in results['details']:
+            print(f"   • {d['title'][:50]}: price={d['price']}, articles={d['articles']}")
+    
+    print("\n✅ Data stored in pending_updates table")
+    print("\n📝 NEXT STEP:")
+    print("   1. Disconnect your VPN (if desired)")
+    print("   2. Run: python cli.py reason")
+
+
+def cmd_reason(args):
+    """Step 2: Run LLM reasoning (no VPN needed)."""
+    print("🧠 Running LLM reasoning (Step 2/2)...")
+    print("   This uses Kimi API - ensure you have KIMI_API_KEY set")
+    print()
+    
+    results = asyncio.run(run_reason_step(args.db))
+    
+    print(f"\n📊 Reasoning Results:")
+    print(f"   Processed: {results['processed']}")
+    print(f"   Failed:    {results['failed']}")
+    
+    if results['details']:
+        print("\n   Details:")
+        for d in results['details']:
+            delta_str = f"{d['delta']:+.2f}" if d['delta'] else "N/A"
+            print(f"   • {d['title'][:50]}: {d['prior']:.2f} → {d['posterior']:.2f} ({delta_str})")
+    
+    print("\n✅ Daily logs created")
     print(f"  Processed: {results['questions_processed']}")
     print(f"  Successful: {results['successful']}")
     print(f"  Failed: {results['failed']}")
@@ -360,9 +404,17 @@ Examples:
     status_parser = subparsers.add_parser("status", help="Show detailed status")
     status_parser.set_defaults(func=cmd_status)
     
-    # Update command
-    update_parser = subparsers.add_parser("update", help="Run daily update manually")
+    # Update command (full pipeline)
+    update_parser = subparsers.add_parser("update", help="Run full daily update (fetch + reason)")
     update_parser.set_defaults(func=cmd_update)
+    
+    # Fetch command (Step 1/2 - requires US VPN)
+    fetch_parser = subparsers.add_parser("fetch", help="Step 1: Fetch Polymarket data (US VPN required)")
+    fetch_parser.set_defaults(func=cmd_fetch)
+    
+    # Reason command (Step 2/2 - no VPN needed)
+    reason_parser = subparsers.add_parser("reason", help="Step 2: Run LLM reasoning (no VPN needed)")
+    reason_parser.set_defaults(func=cmd_reason)
     
     # Resolve command
     resolve_parser = subparsers.add_parser("resolve", help="Mark a question as resolved")

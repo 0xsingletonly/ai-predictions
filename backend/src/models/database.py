@@ -117,6 +117,30 @@ class NewsArticle(Base):
     fetched_at = Column(DateTime, default=datetime.utcnow)
 
 
+class PendingUpdate(Base):
+    """Staged data fetched from Polymarket, awaiting LLM reasoning.
+    
+    This allows splitting the update process:
+    1. fetch: Get Polymarket prices (US VPN required) → store in PendingUpdate
+    2. reason: Run LLM reasoning (no VPN needed) → create DailyLog
+    """
+    __tablename__ = "pending_updates"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    question_id = Column(String, ForeignKey("questions.id"), nullable=False)
+    
+    # Fetched data
+    polymarket_price = Column(Float)
+    articles = Column(JSON, default=list)  # List of article dicts
+    
+    # Metadata
+    fetched_at = Column(DateTime, default=datetime.utcnow)
+    processed = Column(Boolean, default=False)  # True after reason step completes
+    
+    # Relationship
+    question = relationship("Question")
+
+
 # Database setup functions
 def get_engine(db_path: str = "sqlite:///macro_reasoning.db"):
     """Create a synchronous engine."""

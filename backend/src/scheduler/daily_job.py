@@ -248,9 +248,193 @@ class DailyReasoningJob:
         logger.info("="*60)
         
         return results
+    
+    async def fetch_data(self) -> Dict[str, Any]:
+        """
+        Step 1: Fetch Polymarket prices and news for all active questions.
+        Stores data in PendingUpdate table for later reasoning.
+        
+        Returns:
+            Dict with fetch summary
+        """
+        from ..models.database import PendingUpdate
+        
+        logger.info("="*60)
+        logger.info("FETCHING DATA (Step 1/2)")
+        logger.info("="*60)
+        
+        questions = self.db.query(Question).filter(Question.status == "active").all()
+        logger.info(f"Found {len(questions)} active questions")
+        
+        results = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "fetched": 0,
+            "failed": 0,
+            "details": []
+        }
+        
+        for question in questions:
+            try:
+                logger.info(f"Fetching: {question.title[:60]}...")
+                
+                # Fetch price and news
+                data = await self.pipeline.ingest_daily_data(question, fetch_news=True)
+                
+                # Store in PendingUpdate
+                pending = PendingUpdate(
+                    question_id=question.id,
+                    polymarket_price=data.get("polymarket_price"),
+                    articles=data.get("articles", []),
+                    fetched_at=datetime.utcnow(),
+                    processed=False
+                )
+                self.db.add(pending)
+                self.db.commit()
+                
+                results["fetched"] += 1
+                results["details"].append({
+                    "question_id": question.id,
+                    "title": question.title[:50],
+                    "price": data.get("polymarket_price"),
+                    "articles": len(data.get("articles", []))
+                })
+                
+                logger.info(f"  ✓ Price: {data.get('polymarket_price')}, Articles: {len(data.get('articles', []))}")
+                
+            except Exception as e:
+                logger.error(f"  ✗ Error fetching {question.id}: {e}")
+                results["failed"] += 1
+                self.db.rollback()
+        
+        logger.info("="*60)
+        logger.info(f"FETCH COMPLETE: {results['fetched']} fetched, {results['failed']} failed")
+        logger.info("You can now disconnect VPN and run: python cli.py reason")
+        logger.info("="*60)
+        
+        return results
+    
+    async def run_reasoning(self) -> Dict[str, Any]:
+        """
+        Step 2: Run LLM reasoning on fetched data.
+        Processes all unprocessed PendingUpdate entries.
+        
+        Returns:
+            Dict with reasoning summary
+        """
+        from ..models.database import PendingUpdate
+        
+        logger.info("="*60)
+        logger.info("RUNNING REASONING (Step 2/2)")
+        logger.info("="*60)
+        
+        pending_updates = self.db.query(PendingUpdate).filter(
+            PendingUpdate.processed == False
+        ).all()
+        
+        logger.info(f"Found {len(pending_updates)} pending updates to process")
+        
+        results = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "processed": 0,
+            "failed": 0,
+            "details": []
+        }
+        
+        for pending in pending_updates:
+            question = pending.question
+            
+            try:
+                logger.info(f"Reasoning: {question.title[:60]}...")
+                
+                # Get prior probability
+                prior = await self._get_prior_probability(question)
+                
+                # Run LLM reasoning
+                reasoning_result = await self.agent.run_full_reasoning_pipeline(
+                    question={
+                        "id": question.id,
+                        "title": question.title,
+                        "description": question.description,
+                        "category": question.category
+                    },
+                    articles=pending.articles,
+                    prior_probability=prior,
+                    polymarket_price=pending.polymarket_price
+                )
+                
+                # Check for errors
+                if reasoning_result.get("reasoning_summary", "").startswith("Error"):
+                    raise RuntimeError(f"LLM reasoning failed: {reasoning_result.get('reasoning_summary')}")
+                
+                if reasoning_result.get("posterior_probability") is None:
+                    raise RuntimeError("LLM returned invalid posterior")
+                
+                # Check warnings
+                recent_logs = self.db.query(DailyLog).filter(
+                    DailyLog.question_id == question.id
+                ).order_by(DailyLog.date.desc()).limit(5).all()
+                
+                log_dicts = [{"date": log.date.isoformat() if log.date else "", 
+                             "delta": log.delta,
+                             "update_confidence": log.update_confidence,
+                             "evidence_classification": log.evidence_classification} 
+                            for log in recent_logs]
+                
+                anchoring = detect_anchoring(log_dicts)
+                overreaction = detect_overreaction([{
+                    "date": datetime.utcnow().isoformat(),
+                    "delta": reasoning_result.get("delta", 0),
+                    "evidence_classification": reasoning_result.get("evidence_classification", {})
+                }])
+                
+                # Create daily log
+                daily_log = DailyLog(
+                    question_id=question.id,
+                    date=datetime.utcnow(),
+                    prior_probability=prior,
+                    posterior_probability=reasoning_result.get("posterior_probability"),
+                    delta=reasoning_result.get("delta"),
+                    polymarket_price=pending.polymarket_price,
+                    divergence_from_market=reasoning_result.get("divergence_from_market"),
+                    key_evidence=reasoning_result.get("key_evidence", []),
+                    evidence_classification=reasoning_result.get("evidence_classification", {}),
+                    bull_case=reasoning_result.get("bull_case", ""),
+                    bear_case=reasoning_result.get("bear_case", ""),
+                    what_would_change_my_mind=reasoning_result.get("what_would_change_my_mind", ""),
+                    update_confidence=reasoning_result.get("update_confidence", "low"),
+                    reasoning_summary=reasoning_result.get("reasoning_summary", ""),
+                    anchoring_warning=anchoring.get("warning", False),
+                    overreaction_warning=overreaction.get("warning", False)
+                )
+                
+                self.db.add(daily_log)
+                pending.processed = True
+                self.db.commit()
+                
+                results["processed"] += 1
+                results["details"].append({
+                    "question_id": question.id,
+                    "title": question.title[:50],
+                    "prior": prior,
+                    "posterior": reasoning_result.get("posterior_probability"),
+                    "delta": reasoning_result.get("delta")
+                })
+                
+                logger.info(f"  ✓ Complete: {prior:.2f} → {reasoning_result.get('posterior_probability'):.2f}")
+                
+            except Exception as e:
+                logger.error(f"  ✗ Error: {e}")
+                results["failed"] += 1
+                self.db.rollback()
+        
+        logger.info("="*60)
+        logger.info(f"REASONING COMPLETE: {results['processed']} processed, {results['failed']} failed")
+        logger.info("="*60)
+        
+        return results
 
 
-# Standalone function for running the daily job
+# Standalone functions for running the daily job
 async def run_daily_job(db_path: str = "sqlite:///macro_reasoning.db") -> Dict[str, Any]:
     """
     Run the daily job (can be called from CLI or scheduler).
@@ -275,6 +459,56 @@ async def run_daily_job(db_path: str = "sqlite:///macro_reasoning.db") -> Dict[s
         session.close()
 
 
+async def run_fetch_step(db_path: str = "sqlite:///macro_reasoning.db") -> Dict[str, Any]:
+    """
+    Run only the fetch step (Step 1/2).
+    Fetches Polymarket prices and news, stores in PendingUpdate.
+    
+    Args:
+        db_path: Database path
+        
+    Returns:
+        Fetch results
+    """
+    engine = get_engine(db_path)
+    init_db(engine)
+    
+    session = SessionLocal(bind=engine)
+    
+    try:
+        async with DailyReasoningJob() as job:
+            job.set_db_session(session)
+            results = await job.fetch_data()
+            return results
+    finally:
+        session.close()
+
+
+async def run_reason_step(db_path: str = "sqlite:///macro_reasoning.db") -> Dict[str, Any]:
+    """
+    Run only the reasoning step (Step 2/2).
+    Processes PendingUpdate entries with LLM reasoning.
+    
+    Args:
+        db_path: Database path
+        
+    Returns:
+        Reasoning results
+    """
+    engine = get_engine(db_path)
+    init_db(engine)
+    
+    session = SessionLocal(bind=engine)
+    
+    try:
+        async with DailyReasoningJob() as job:
+            job.set_db_session(session)
+            results = await job.run_reasoning()
+            return results
+    finally:
+        session.close()
+
+
 # CLI entry point
 def main():
     """CLI entry point for running daily job."""
@@ -283,23 +517,43 @@ def main():
     parser = argparse.ArgumentParser(description="Run daily reasoning update")
     parser.add_argument("--db", default="sqlite:///macro_reasoning.db", help="Database path")
     parser.add_argument("--dry-run", action="store_true", help="Dry run (don't save to DB)")
+    parser.add_argument("fetch", action="store_true", help="Only fetch data (Step 1/2)")
+    parser.add_argument("reason", action="store_true", help="Only run reasoning (Step 2/2)")
     
     args = parser.parse_args()
     
-    results = asyncio.run(run_daily_job(args.db))
-    
-    print("\n" + "="*60)
-    print("DAILY UPDATE RESULTS")
-    print("="*60)
-    print(f"Questions processed: {results['questions_processed']}")
-    print(f"Successful: {results['successful']}")
-    print(f"Failed: {results['failed']}")
-    
-    if results['details']:
-        print("\nDetails:")
-        for detail in results['details']:
-            status_icon = "✅" if detail['status'] == 'success' else "❌"
-            print(f"  {status_icon} {detail['title'][:50]}...")
+    if args.fetch:
+        results = asyncio.run(run_fetch_step(args.db))
+        print("\n" + "="*60)
+        print("FETCH RESULTS")
+        print("="*60)
+        print(f"Questions fetched: {results['fetched']}")
+        print(f"Failed: {results['failed']}")
+        print("\nNext step: Disconnect VPN, then run: python cli.py reason")
+        
+    elif args.reason:
+        results = asyncio.run(run_reason_step(args.db))
+        print("\n" + "="*60)
+        print("REASONING RESULTS")
+        print("="*60)
+        print(f"Questions processed: {results['processed']}")
+        print(f"Failed: {results['failed']}")
+        
+    else:
+        # Run full update
+        results = asyncio.run(run_daily_job(args.db))
+        print("\n" + "="*60)
+        print("DAILY UPDATE RESULTS")
+        print("="*60)
+        print(f"Questions processed: {results['questions_processed']}")
+        print(f"Successful: {results['successful']}")
+        print(f"Failed: {results['failed']}")
+        
+        if results['details']:
+            print("\nDetails:")
+            for detail in results['details']:
+                status_icon = "✅" if detail['status'] == 'success' else "❌"
+                print(f"  {status_icon} {detail['title'][:50]}...")
 
 
 if __name__ == "__main__":
