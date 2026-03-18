@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { fetchQuestions } from '../lib/api'
+import { fetchQuestions, fetchStats } from '../lib/api'
 import { TrendingUp, TrendingDown, AlertTriangle, Activity } from 'lucide-react'
 
 function QuestionCard({ question }) {
@@ -181,7 +181,8 @@ export default function PortfolioOverview() {
       setStats(statsData)
     } catch (err) {
       console.error('Error loading data:', err)
-      setError('Failed to load data. Is the API running?')
+      const errorMessage = err.response?.data?.detail || err.message || 'Unknown error'
+      setError(`Failed to load data: ${errorMessage}. Is the API running?`)
     } finally {
       setLoading(false)
     }

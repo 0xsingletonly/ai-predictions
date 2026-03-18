@@ -61,17 +61,29 @@ app = FastAPI(
 )
 
 # CORS configuration for React dev server
+# Note: allow_credentials=True cannot be used with allow_origins=["*"]
+# Using specific origins for development
+origins = [
+    "http://localhost:5173",  # Vite default
+    "http://localhost:3000",  # React default
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:3000",
+]
+
+# Add any additional origins from environment variable
+import os
+cors_origins = os.getenv("CORS_ORIGINS", "")
+if cors_origins:
+    origins.extend(cors_origins.split(","))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",  # Vite default
-        "http://localhost:3000",  # React default
-        "http://127.0.0.1:5173",
-        "http://127.0.0.1:3000",
-    ],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=600,  # Cache preflight requests for 10 minutes
 )
 
 
